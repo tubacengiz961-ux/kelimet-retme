@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Çevrimiçi Kelime Türetmece - Sınıf Modu</title>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f3e5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 { color: #4a148c; margin-bottom: 5px; text-align: center; font-weight: bold;}
+        
+        /* Paneller */
+        .panel {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 100%;
+            max-width: 550px;
+            margin-top: 20px;
+        }
+        
+        input[type="text"] {
+            width: 85%;
+            padding: 12px;
+            margin: 10px 0;
+            font-size: 1.1rem;
+            border-radius: 8px;
+            border: 2px solid #e1bee7;
+            outline: none;
+            text-align: center;
+        }
+        input[type="text"]:focus { border-color: #8e24aa; }
+        
+        button {
+            background-color: #8e24aa;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            width: 90%;
+            transition: 0.2s;
+            margin-top: 10px;
+        }
+        button:hover { background-color: #4a148c; }
+        button:disabled { background-color: #9e9e9e; cursor: not-allowed; }
+
+        .btn-danger { background-color: #d32f2f; }
+        .btn-danger:hover { background-color: #b71c1c; }
+        .btn-warning { background-color: #ff9800; color: #fff; margin-top: 5px; font-size: 0.95rem; width: auto; padding: 8px 15px;}
+
+        /* Oyun İçi Alanlar */
+        #game-screen, #gameover-screen { display: none; }
+        
+        .timer-box {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #fff;
+            background: #e53935;
+            padding: 5px 25px;
+            border-radius: 20px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+            display: inline-block;
+            margin-bottom: 15px;
+        }
+
+        /* Kelime Gösterim Alanı */
+        .word-display-box {
+            background: #fafafa;
+            border: 3px dashed #8e24aa;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 15px 0;
+            position: relative;
+        }
+        .last-word { font-size: 2.2rem; font-weight: bold; color: #333; letter-spacing: 2px; word-break: break-all;}
+        .target-letter { color: #ff9100; font-size: 3.5rem; font-weight: bold; display: block; margin-top: -5px; }
+
+        #turn-status { font-size: 1.3rem; font-weight: bold; margin: 10px 0; color: #4a148c; }
+
+        /* Oyuncu Listesi (Canlar ve Sıra) */
+        .player-grid {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .player-card {
+            background: #f3e5f5;
+            border: 2px solid #ce93d8;
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #4a148c;
+            min-width: 90px;
+        }
+        .player-card.active-turn { background: #ab47bc; color: white; transform: scale(1.05); box-shadow: 0 4px 8px rgba(0,0,0,0.2); border-color: #4a148c;}
+        .player-card.eliminated { opacity: 0.4; text-decoration: line-through; filter: grayscale(100%); }
+        .heart { color: #ff1744; }
+
+        .chain-history {
+            max-height: 100px;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            color: #666;
+            text-align: left;
+            margin-top: 15px;
+        }
+        
+        .admin-controls {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e1bee7;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Kelime Türetmece</h1>
+
+    <div id="login-screen" class="panel">
+        <h3>Oyuna Katıl</h3>
+        <input type="text" id="username-input" placeholder="Adınızı girin..." maxlength="12">
+        <input type="text" id="room-input" placeholder="Oda Kodu (Örn: 555)..." maxlength="6">
+        <button onclick="joinRoom()">Odaya Bağlan</button>
+        <p style="font-size: 0.85rem; color: #666; margin-top: 15px;">Aynı oda koduyla sınırsız oyuncu katılabilir. Oyun bitiminde yeni oyuncular kilitlenme yapmaz.</p>
+    </div>
+
+    <div id="waiting-screen" class="panel" style="display:none;">
+        <h3 id="waiting-text">Oyuncular Bekleniyor...</h3>
+        <div class="player-grid" id="waiting-players"></div>
+        <button id="start-btn" style="display:none; background-color: #4caf50;" onclick="startRound()">Oyunu Başlat</button>
+        <p style="font-size: 0.8rem; color: #666; margin-top: 10px;">Kurucu oyunu başlattığı an kelime zinciri başlar.</p>
+    </div>
+
+    <div id="game-screen" class="panel">
+        
+        <div class="timer-box" id="timer">15</div>
+        <div id="turn-status">Yükleniyor...</div>
+
+        <div class="player-grid" id="ingame-players"></div>
+
+        <div class="word-display-box">
+            <span style="font-size: 0.85rem; color:#666; font-weight: bold;">SON KELİME</span>
+            <div class="last-word" id="last-word-view">-</div>
+            
+            <button id="referee-btn" class="btn-warning" style="display:none;" onclick="refereeCancelWord()">🛑 Hakem: İptal Et</button>
+
+            <span style="font-size: 0.85rem; color:#666; margin-top:15px; display:inline-block; font-weight: bold;">BAŞLAMANIZ GEREKEN HARF</span>
+            <div class="target-letter" id="target-letter-view">?</div>
+        </div>
+
+        <div id="input-area">
+            <input type="text" id="word-input" placeholder="Kelimenizi yazın..." autocomplete="off">
+            <button onclick="submitWord()" id="send-btn">Gönder (Enter)</button>
+        </div>
+
+        <div class="chain-history" id="history-box">
+            <b>Kullanılan Kelimeler:</b> <span id="history-list">Henüz kelime girilmedi.</span>
+        </div>
+        
+        <p style="font-size: 0.8rem; color: #777; margin-top: 15px;"><b>Kurallar:</b> Özel isim, argo ve uydurma kelime yasaktır. Kelime "Ğ" ile biterse, "Ğ" den önceki harfle başlanır. Daha önce yazılan kelime tekrar yazılamaz!</p>
+
+        <div class="admin-controls" id="admin-controls" style="display:none;">
+            <button id="skip-turn-btn" class="btn-warning" style="width: 48%; background-color:#f57c00; margin-top:0;" onclick="skipTurnManually()">Sırayı Atla</button>
+            <button id="stop-game-btn" class="btn-danger" style="width: 48%; margin-top:0;" onclick="endGameManually()">Oyunu Bitir</button>
+        </div>
+    </div>
+
+    <div id="gameover-screen" class="panel">
+        <h2>Oyun Bitti!</h2>
+        <h3 id="winner-text" style="color: #4a148c;"></h3>
+        <div class="player-grid" id="final-scores" style="margin-top: 20px;"></div>
+        <button class="btn-danger" onclick="resetWholeGame()">Yepyeni Oyun Başlat (Lobiye Dön)</button>
+    </div>
+
+    <script>
+        // --- FIREBASE YAPILANDIRMASI ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBqYTVJcdJQb83qCWpkjFd2H2J3f8UYtXs",
+            authDomain: "dijital-mangala-fc434.firebaseapp.com",
+            databaseURL: "https://dijital-mangala-fc434-default-rtdb.firebaseio.com",
+            projectId: "dijital-mangala-fc434",
+            storageBucket: "dijital-mangala-fc434.firebasestorage.app",
+            messagingSenderId: "901348106095",
+            appId: "1:901348106095:web:1dd4bba92b52493f71929a"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        let roomRef;
+        let myName = "";
+        let roomCode = "";
+        let timerInterval = null;
+
+        let gameState = {
+            status: "waiting", 
+            players: {}, 
+            turnOrder: [], 
+            currentTurnIndex: 0,
+            usedWords: [""],
+            lastPlayer: "", 
+            endTime: 0,
+            winnerText: ""
+        };
+
+        // GÜNCELLEME: Dinamik Kurucu Belirleme
+        function getHostName() {
+            if (!gameState.players) return "";
+            let pNames = Object.keys(gameState.players);
+            return pNames.length > 0 ? pNames[0] : "";
+        }
+
+        function trToUpper(str) {
+            return str.replace(/ğ/g, 'Ğ').replace(/ü/g, 'Ü').replace(/ş/g, 'Ş').replace(/ı/g, 'I').replace(/i/g, 'İ').replace(/ö/g, 'Ö').replace(/ç/g, 'Ç').toUpperCase().trim();
+        }
+
+        function getRequiredLetter(word) {
+            if (!word || word === "") return "SERBEST";
+            let lastChar = word.slice(-1);
+            if (lastChar === "Ğ" && word.length > 1) {
+                return word.slice(-2, -1); 
+            }
+            return lastChar;
+        }
+
+        function joinRoom() {
+            let rawName = document.getElementById('username-input').value.trim();
+            roomCode = document.getElementById('room-input').value.trim();
+
+            if (!rawName || !roomCode) { alert("Lütfen alanları doldurun!"); return; }
+
+            roomRef = database.ref('kelimeturetmece/' + roomCode);
+
+            roomRef.once('value', snapshot => {
+                let data = snapshot.val();
+                let now = Date.now();
+                let isZombied = false;
+                
+                if (data && data.status === "playing" && data.endTime && (now > data.endTime + 10000)) {
+                    isZombied = true;
+                }
+                
+                if (!data || isZombied || !data.players) {
+                    myName = rawName;
+                    let freshState = {
+                        status: "waiting",
+                        players: {},
+                        turnOrder: [],
+                        currentTurnIndex: 0,
+                        usedWords: [""],
+                        lastPlayer: "",
+                        endTime: 0,
+                        winnerText: ""
+                    };
+                    freshState.players[myName] = { lives: 3, score: 0 };
+                    
+                    roomRef.set(freshState).then(() => {
+                        document.getElementById('login-screen').style.display = 'none';
+                        roomRef.child('players').child(myName).onDisconnect().remove();
+                        listenToRoom();
+                    });
+                } 
+                else if (data.status === "waiting" || data.status === "gameover") {
+                    myName = rawName;
+                    if (data.players && data.players[myName]) {
+                        myName = myName + Math.floor(Math.random() * 100);
+                    }
+                    roomRef.child('players').child(myName).set({ lives: 3, score: 0 }).then(() => {
+                        document.getElementById('login-screen').style.display = 'none';
+                        roomRef.child('players').child(myName).onDisconnect().remove();
+                        listenToRoom();
+                    });
+                } 
+                else {
+                    alert("Oyun şu an oynanıyor! Lütfen bitmesini bekleyin.");
+                    return;
+                }
+
+                document.getElementById('word-input').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') submitWord();
+                });
+            });
+        }
+
+        function listenToRoom() {
+            roomRef.on('value', snapshot => {
+                let data = snapshot.val();
+                if (!data) return;
+                
+                // GÜNCELLEME: Burada önceden kurucu ataması vardı ve sonsuz döngü yaratıyordu, tamamen silindi.
+                gameState = data;
+                updateUI();
+            });
+        }
+
+        function updateUI() {
+            if (!gameState.players) return;
+
+            let actualHost = getHostName();
+            let pNames = Object.keys(gameState.players);
+            let tOrder = gameState.turnOrder ? (Array.isArray(gameState.turnOrder) ? gameState.turnOrder : Object.values(gameState.turnOrder)) : [];
+
+            if (gameState.status === "waiting") {
+                document.getElementById('waiting-screen').style.display = 'block';
+                document.getElementById('game-screen').style.display = 'none';
+                document.getElementById('gameover-screen').style.display = 'none';
+                
+                let pList = document.getElementById('waiting-players');
+                pList.innerHTML = "";
+                pNames.forEach(p => {
+                    pList.innerHTML += `<div class="player-card">${p} ${p === actualHost ? '👑' : ''}</div>`;
+                });
+
+                if (myName === actualHost && pNames.length > 1) {
+                    document.getElementById('start-btn').style.display = 'inline-block';
+                    document.getElementById('waiting-text').innerText = "Oyun Başlamaya Hazır!";
+                } else {
+                    document.getElementById('start-btn').style.display = 'none';
+                    document.getElementById('waiting-text').innerText = "Oyuncular Bekleniyor...";
+                }
+            } 
+            else if (gameState.status === "playing") {
+                document.getElementById('waiting-screen').style.display = 'none';
+                document.getElementById('game-screen').style.display = 'block';
+
+                let activePlayer = tOrder[gameState.currentTurnIndex];
+
+                let pGrid = document.getElementById('ingame-players');
+                pGrid.innerHTML = "";
+                tOrder.forEach(p => {
+                    let pData = gameState.players[p];
+                    if (!pData) return;
+                    let hearts = "❤".repeat(pData.lives) + "🖤".repeat(3 - pData.lives);
+                    let classStr = "player-card";
+                    if (pData.lives <= 0) classStr += " eliminated";
+                    else if (p === activePlayer) classStr += " active-turn";
+
+                    pGrid.innerHTML += `<div class="${classStr}">${p}<br><span class="heart">${hearts}</span><br><span style="font-size:0.8rem">${pData.score} Puan</span></div>`;
+                });
+
+                let wordsArr = gameState.usedWords || [""];
+                let lastW = wordsArr[wordsArr.length - 1];
+                let reqLetter = getRequiredLetter(lastW);
+
+                if (lastW === "") {
+                    document.getElementById('last-word-view').innerText = "BAŞLANGIÇ";
+                    document.getElementById('target-letter-view').innerText = "SERBEST";
+                } else {
+                    document.getElementById('last-word-view').innerText = lastW;
+                    document.getElementById('target-letter-view').innerText = reqLetter;
+                }
+
+                if (myName === actualHost) {
+                    document.getElementById('admin-controls').style.display = 'flex';
+                    if (lastW !== "") document.getElementById('referee-btn').style.display = 'inline-block';
+                    else document.getElementById('referee-btn').style.display = 'none';
+                } else {
+                    document.getElementById('admin-controls').style.display = 'none';
+                    document.getElementById('referee-btn').style.display = 'none';
+                }
+
+                let cleanList = wordsArr.filter(w => w !== "");
+                if (cleanList.length > 0) {
+                    document.getElementById('history-list').innerText = cleanList.join(" ➔ ");
+                } else {
+                    document.getElementById('history-list').innerText = "Henüz kelime girilmedi.";
+                }
+
+                let inputEl = document.getElementById('word-input');
+                let btnEl = document.getElementById('send-btn');
+                
+                if (activePlayer === myName && gameState.players[myName].lives > 0) {
+                    document.getElementById('turn-status').innerText = "SIRA SİZDE! Hızlıca kelime yazın.";
+                    inputEl.disabled = false;
+                    btnEl.disabled = false;
+                    inputEl.focus(); // Sıra sendeyse odaklan
+                } else {
+                    document.getElementById('turn-status').innerText = `Sıra ${activePlayer} adlı oyuncuda...`;
+                    inputEl.disabled = true;
+                    btnEl.disabled = true;
+                }
+
+                startMainTimerLoop();
+            } 
+            else if (gameState.status === "gameover") {
+                document.getElementById('game-screen').style.display = 'none';
+                document.getElementById('gameover-screen').style.display = 'block';
+                document.getElementById('winner-text').innerText = gameState.winnerText;
+                stopMainTimerLoop();
+                
+                let fGrid = document.getElementById('final-scores');
+                fGrid.innerHTML = "";
+                let sortedP = Object.keys(gameState.players).sort((a,b) => gameState.players[b].score - gameState.players[a].score);
+                
+                sortedP.forEach((p, index) => {
+                    let d = gameState.players[p];
+                    fGrid.innerHTML += `<div class="player-card"><b>${index+1}. ${p}</b><br>${d.score} Puan<br>Kalan Can: ${d.lives}</div>`;
+                });
+            }
+        }
+
+        function startRound() {
+            let pNames = Object.keys(gameState.players);
+            let pData = gameState.players;
+            for (let p in pData) {
+                pData[p].lives = 3;
+                pData[p].score = 0;
+            }
+
+            roomRef.update({
+                status: "playing",
+                turnOrder: pNames,
+                currentTurnIndex: 0,
+                usedWords: [""],
+                lastPlayer: "",
+                endTime: Date.now() + (16 * 1000), 
+                players: pData
+            });
+        }
+
+        function submitWord() {
+            let tOrder = Array.isArray(gameState.turnOrder) ? gameState.turnOrder : Object.values(gameState.turnOrder);
+            let activePlayer = tOrder[gameState.currentTurnIndex];
+            
+            if (activePlayer !== myName || gameState.status !== "playing") return;
+
+            let inputEl = document.getElementById('word-input');
+            let word = trToUpper(inputEl.value);
+
+            if (word.length < 3) { alert("Kelime en az 3 harfli olmalıdır!"); return; }
+
+            let wordsArr = gameState.usedWords || [""];
+            let lastW = wordsArr[wordsArr.length - 1];
+            let reqLetter = getRequiredLetter(lastW);
+
+            if (reqLetter !== "SERBEST" && word.charAt(0) !== reqLetter) {
+                alert(`HATA! Kelime '${reqLetter}' harfi ile başlamalıdır!`);
+                inputEl.value = "";
+                return;
+            }
+
+            if (wordsArr.includes(word)) {
+                alert(`HATA! '${word}' kelimesi daha önce kullanıldı!`);
+                inputEl.value = "";
+                return;
+            }
+
+            let newWords = [...wordsArr, word];
+            let points = word.length;
+            
+            let pData = gameState.players;
+            pData[myName].score += points;
+
+            let nextIndex = getNextActivePlayerIndex(gameState.currentTurnIndex);
+
+            roomRef.update({
+                usedWords: newWords,
+                lastPlayer: myName,
+                currentTurnIndex: nextIndex,
+                players: pData,
+                endTime: Date.now() + (16 * 1000) 
+            });
+
+            inputEl.value = "";
+        }
+
+        function refereeCancelWord() {
+            let wordsArr = gameState.usedWords || [""];
+            if (wordsArr.length <= 1) return; 
+
+            let targetPlayer = gameState.lastPlayer;
+            if (!targetPlayer) return;
+
+            let pData = gameState.players;
+            let canceledWord = wordsArr.pop(); 
+            
+            pData[targetPlayer].lives -= 1;
+            pData[targetPlayer].score -= canceledWord.length;
+            if (pData[targetPlayer].score < 0) pData[targetPlayer].score = 0;
+            
+            checkEliminationAndAdvance(pData, targetPlayer, wordsArr);
+        }
+
+        function getNextActivePlayerIndex(currentIndex) {
+            let order = Array.isArray(gameState.turnOrder) ? gameState.turnOrder : Object.values(gameState.turnOrder);
+            let players = gameState.players;
+            let nextIdx = currentIndex;
+            
+            if (order.length === 0) return 0;
+
+            for (let i = 0; i < order.length; i++) {
+                nextIdx = (nextIdx + 1) % order.length;
+                let pName = order[nextIdx];
+                if (players[pName] && players[pName].lives > 0) {
+                    return nextIdx;
+                }
+            }
+            return currentIndex; 
+        }
+
+        function checkEliminationAndAdvance(pDataObj, penalizedPlayer, newWordsArr) {
+            let aliveCount = 0;
+            let possibleWinner = "";
+            let order = Array.isArray(gameState.turnOrder) ? gameState.turnOrder : Object.values(gameState.turnOrder);
+
+            order.forEach(p => {
+                if (pDataObj[p] && pDataObj[p].lives > 0) {
+                    aliveCount++;
+                    possibleWinner = p;
+                }
+            });
+
+            if (aliveCount <= 1) {
+                let winMsg = aliveCount === 1 ? `Şampiyon: ${possibleWinner}!` : "Herkes elendi!";
+                roomRef.update({
+                    status: "gameover",
+                    players: pDataObj,
+                    usedWords: newWordsArr,
+                    winnerText: winMsg
+                });
+            } else {
+                roomRef.update({
+                    players: pDataObj,
+                    usedWords: newWordsArr,
+                    currentTurnIndex: getNextActivePlayerIndex(order.indexOf(penalizedPlayer)),
+                    endTime: Date.now() + (16 * 1000)
+                });
+            }
+        }
+
+        window.skipTurnManually = function() {
+            let actualHost = getHostName();
+            if (myName !== actualHost) return;
+            let pData = gameState.players;
+            let tOrder = Array.isArray(gameState.turnOrder) ? gameState.turnOrder : Object.values(gameState.turnOrder);
+            let activePlayer = tOrder[gameState.currentTurnIndex];
+            
+            if (pData[activePlayer]) {
+                pData[activePlayer].lives -= 1;
+            }
+            
+            checkEliminationAndAdvance(pData, activePlayer, gameState.usedWords || [""]);
+        };
+
+        function endGameManually() {
+            let actualHost = getHostName();
+            if (myName !== actualHost) return;
+            let sortedP = Object.keys(gameState.players).sort((a,b) => gameState.players[b].score - gameState.players[a].score);
+            let winner = sortedP[0] || "";
+            roomRef.update({
+                status: "gameover",
+                winnerText: `Kurucu oyunu bitirdi! Puan Şampiyonu: ${winner}`
+            });
+        }
+
+        // GÜNCELLEME: Çakışmaları engellemek için sadece kurucu bu olayları işletir
+        function checkAutomatedEvents() {
+            let actualHost = getHostName();
+            if (myName !== actualHost || gameState.status !== "playing") return;
+            
+            let now = Date.now();
+            let tOrder = Array.isArray(gameState.turnOrder) ? gameState.turnOrder : Object.values(gameState.turnOrder);
+            let activePlayer = tOrder[gameState.currentTurnIndex];
+            let pData = gameState.players;
+
+            if (activePlayer && (!pData || !pData[activePlayer])) {
+                skipTurnManually();
+            }
+
+            if (now >= gameState.endTime && !gameState.processing) {
+                roomRef.update({ processing: true }).then(() => {
+                    if (pData[activePlayer]) {
+                        pData[activePlayer].lives -= 1;
+                    }
+                    checkEliminationAndAdvance(pData, activePlayer, gameState.usedWords || [""]);
+                    roomRef.update({ processing: false });
+                });
+            }
+        }
+
+        function startMainTimerLoop() {
+            if (timerInterval) clearInterval(timerInterval);
+            
+            timerInterval = setInterval(() => {
+                if (gameState.status !== "playing") { clearInterval(timerInterval); return; }
+
+                let remaining = Math.floor((gameState.endTime - Date.now()) / 1000);
+                if (remaining <= 0) remaining = 0;
+                
+                document.getElementById('timer').innerText = remaining;
+                
+                checkAutomatedEvents();
+            }, 500);
+        }
+
+        function stopMainTimerLoop() {
+            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        }
+
+        function resetWholeGame() {
+            let freshPlayers = {};
+            for (let p in gameState.players) {
+                freshPlayers[p] = { lives: 3, score: 0 };
+            }
+            roomRef.update({
+                status: "waiting",
+                players: freshPlayers,
+                usedWords: [""],
+                lastPlayer: "",
+                turnOrder: [],
+                currentTurnIndex: 0,
+                winnerText: ""
+            });
+        }
+    </script>
+</body>
+</html>
